@@ -63,7 +63,7 @@ server <- function(input, output, session) {
     vars = c("P_RR", "P_dur", "S_RR", "S_dur",
              "A_RR", "A_dur",
              "S_prob.det", "A_prob.det", "A_prob", "contact_trace_prob",
-             "days_untraced", "days_traced", "R0", "Rt", "comparator",
+             "R0", "Rt", "comparator",
              "baseline_S_prob.det", "baseline_A_prob.det", "test_uptake", "adh", "rel_trans", "xaxis")
     
     for(i in 1:length(vars)) reset(vars[i])

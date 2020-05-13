@@ -59,8 +59,7 @@ make_params = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                       AU_RR = A_RR, AU_dur = A_dur,
                       AD_RR = A_RR*rel_trans, AD_dur = A_dur,
                       S_prob.det, A_prob.det, A_prob,
-                      symp_contact_trace_prob = contact_trace_prob, asymp_contact_trace_prob = contact_trace_prob, 
-                      days_traced, days_untraced)
+                      symp_contact_trace_prob = contact_trace_prob, asymp_contact_trace_prob = contact_trace_prob)
   
   # COUNTERFACTUAL: base case with no contact tracing
   # If comparison to testing scale-up, also lower testing
@@ -212,10 +211,10 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
            # R as a ratio
            maxR = max(R), ratio = R/max(R), 
            # percent reduction
-           perc_red = 1-ratio, 
+           perc_red = 100*(1-ratio), 
            # containment margin
            c_margin = (R0 - 1/(ratio*Rt))/(R0 - Rt),
-           c_margin = ifelse(c_margin < 0, 0, c_margin),
+           c_margin = 100*ifelse(c_margin < 0, 0, c_margin),
            # percent from each group
            Symptomatic = symp*ratio*Rt,
            Asymptomatic = asymp*ratio*Rt,
@@ -229,43 +228,48 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
   R1 = R_plot %>%
     gather(chk, value, perc_red, c_margin) %>% 
     mutate(var2 = ifelse(chk == "perc_red", "Percentage reduction in R(t)", 
-                         "Fraction of current measures needed for \n R(t)<1 after contact tracing"),
+                         "Percentage of current measures needed for \n R(t)<1 after contact tracing"),
            var3 = factor(var2, levels = c("Percentage reduction in R(t)",
-                                          "Fraction of current measures needed for \n R(t)<1 after contact tracing"))) %>% 
+                                          "Percentage of current measures needed for \n R(t)<1 after contact tracing")),
+           txt =  paste(Scenario2, ": \n x=", round(var), "\n y=",  round(value), sep = "")) %>% 
     filter(Scenario != "No contact \ntracing") 
   
   # make plot
   a = ggplot(R1, aes(x = var, y = value)) +
-    geom_line(lwd = 1, aes(group = Scenario2, col = Scenario2, text = paste(Scenario2, ": ", round(value, 2), sep = ""))) + 
+    geom_line(lwd = 1, aes(group = Scenario2, col = Scenario2, text = txt)) + 
     theme_minimal(base_size = 20) +
-    geom_point(data = R1 %>% filter(point=="point"), aes(x = var, y = value, group = Scenario2, text = paste(Scenario2, ": ", round(value, 2), sep = "")), size = 2, col = "black") + 
+    geom_point(data = R1 %>% filter(point=="point"), aes(x = var, y = value, group = Scenario2, text = txt), size = 2, col = "black") + 
     facet_wrap(.~var3, ncol = 2) + t +
-    scale_color_brewer(name = "", palette = "Set1") + labs(x = xaxis, y = "", title = "") + ylim(0,1)
+    scale_color_brewer(name = "", palette = "Set1") + labs(x = xaxis, y = "", title = "") + ylim(0,100)
   
   # BOTTOM LEFT
   # process data
   R2 = R_plot %>% filter(Scenario!="No contact \ntracing") %>% 
-    mutate(temp = "Fraction of detected cases identified \nthrough contact tracing")
+    mutate(temp = "Percentage of detected cases identified \nthrough contact tracing",
+           det_frac = det_frac*100,
+           txt = paste(Scenario2, ": \n x=", round(var, 2), "\n y=",  round(det_frac), sep = ""))
   
   # make plot
   b = ggplot(R2, 
              aes(x = var, y = det_frac, group = Scenario2, col = Scenario2,
-                                                           text = paste(Scenario2, ": ", round(det_frac, 2), sep = ""))) + 
+                                                           text = txt)) + 
     geom_line(lwd = 1) + 
     geom_point(data = R2 %>% filter(point=="point"), aes(x = var, y = det_frac, group = Scenario2, 
-                                                             text = paste(Scenario2, ": ", round(det_frac, 2), sep = "")), size = 2, col = "black") + 
+                                                             text = txt), size = 2, col = "black") + 
     theme_minimal(base_size = 20) + 
     scale_color_brewer(name = "", palette = "Set1") + 
-    labs(x = xaxis, y = "", title = "") + t + facet_grid(.~temp) + ylim(0,1) + theme(legend.position='none') 
+    labs(x = xaxis, y = "", title = "") + t + facet_grid(.~temp) + ylim(0,100) + theme(legend.position='none') 
   
   # BOTTOM RIGHT
   # process data
   R3 = R_plot %>% filter(point=="point") %>%
-    mutate(temp = "R(t) by symptom status") %>% gather(chk, value, Asymptomatic, Presymptomatic, Symptomatic) 
+    gather(chk, value, Asymptomatic, Presymptomatic, Symptomatic) %>%
+    mutate(txt = paste(chk, ": ", round(value, 2), sep = ""),
+           temp = "R(t) by symptom status")
   
   # make plot
   c = ggplot(R3,
-             aes(x = Scenario2, y = value, fill = chk, text = paste(chk, ": ", round(value, 2), sep = ""))) + 
+             aes(x = Scenario2, y = value, fill = chk, text = txt)) + 
     geom_bar(stat = "identity") + 
     geom_text(position = position_stack(vjust = .5), aes(label = round(value, 2))) + 
     geom_text(aes(y = ratio*Rt*1.1, label = round(ratio*Rt,2))) + 
