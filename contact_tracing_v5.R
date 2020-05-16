@@ -5,7 +5,7 @@
 #******************************************************************************************#
 
 #### GET_R: UMBRELLA FUNCTION ####
-# 1) set x-axis on plots
+# 1) set variable over which to vary outcomes
 # 2) call make_params to set up transition matrix
 # 3) call calc_R to estimate outcomes
 # 4) return data frame of R, det_frac, and R by symptom type
@@ -15,10 +15,11 @@ get_R = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                  test_uptake, adh, adh2, rel_trans, xaxis){
   
   # set x-axis
-  var = c(eval(parse(text = xaxis)), seq(.1, .95, length.out = 10))
+  var = c(eval(parse(text = xaxis)), seq(.1, .9, length.out = 9), .95)
   
   # create data frame to store output 
   a = data.frame()
+  b = data.frame()
   
   # run model over each iteration of data frame
   for(i in 1:length(var)){
@@ -32,8 +33,23 @@ get_R = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                     comparator, baseline_S_prob.det, baseline_A_prob.det, 
                     test_uptake, adh, adh2, rel_trans)
     
+    a = bind_rows(a, calc_R(z[[1]], z[[2]], z[[3]], z[[4]], z[[5]],z[[6]],
+                            comparator = "Testing scale-up + contact tracing") %>% 
+                    mutate(
+                      # store variable values
+                      var = var[i], 
+                      
+                      # note if these were selected inputs
+                      point = ifelse(i == 1, "point", "omit")))
+    
+    # make parameter vectors
+    z2 = make_params(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
+                    A_prob.det, A_prob, contact_trace_prob,
+                    comparator = "Contact tracing only", baseline_S_prob.det, baseline_A_prob.det, 
+                    test_uptake, adh, adh2, rel_trans)
+    
     # run analyses
-    a = bind_rows(a, calc_R(z[[1]], z[[2]], z[[3]], z[[4]], z[[5]],z[[6]]) %>% 
+    b = bind_rows(b, calc_R(z2[[1]], z2[[2]], z2[[3]], z2[[4]], z2[[5]],z2[[6]]) %>% 
                     mutate(
                       # store variable values
                       var = var[i], 
@@ -42,12 +58,12 @@ get_R = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                       point = ifelse(i == 1, "point", "omit")))
   }
   
-  return(a)
+  return(list(a,b))
   
 }
 
 #### make_params: Make parameter set associated with each scenario ####
-# 1) Take in model inputts
+# 1) Take in model inputs
 # 2) Return set of parameters for each scenario
 make_params = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                        A_prob.det, A_prob, contact_trace_prob, comparator,
@@ -105,22 +121,30 @@ make_params = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
 # 2) Test symptomatics
 # 3) Test all
 calc_R = function(params_cf, params, params_ctrace_1, params_ctrace_2plus,
-                  params_test_ctrace_1, params_test_ctrace_2_plus) {
+                  params_test_ctrace_1, params_test_ctrace_2_plus, comparator = "Contact tracing only") {
   
   # run different methods
   out = bind_rows(dom_eigen(params_cf, params_cf, params_cf) %>% mutate(Scenario = "No contact \ntracing"),
-                  dom_eigen(params, params_ctrace_1, params_ctrace_2plus) %>% mutate(Scenario = "Test symptomatic \ncontacts"),
-                  dom_eigen(params, params_test_ctrace_1, params_test_ctrace_2_plus) %>% mutate(Scenario = "Test all \ncontacts"))
+                  dom_eigen(params, params_ctrace_1, params_ctrace_2plus) %>% mutate(Scenario = "Contact tracing\n(Test symptomatic)"),
+                  dom_eigen(params, params_test_ctrace_1, params_test_ctrace_2_plus) %>% mutate(Scenario = "Contact tracing\n(Test all)"))
+  
+  #if(comparator!="Contact tracing only"){
+  #  out = out %>% bind_rows(dom_eigen(params, params, params) %>% mutate(Scenario = "Testing scale-up"))
+  #}
   return(out) 
 }
 
 
 #### dom_eigen: Make transition matrix and calculate R + steady state ####
-# 1) Call transition probs for each cake
+# 1) Call transition probs for each case
 # 2) Make transition matrix
 # 3) Take eigenvalues
 # 4) Take eigenvectors of transpose
 # 5) Return data from of relevant quantities
+# Note that we don't care where R(t) starts in this function
+# because the relative R(t) will be the same, no matter what the baseline
+# i.e. eigenvalues scale linearly when multiplied by a constant
+# so we adjust to user-input R(t) later on in make_plots
 dom_eigen = function(params, params_ctrace_1, params_ctrace_2plus){
   
   # call transition probs
@@ -206,48 +230,52 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
             axis.text = element_text(size = 11)) 
   
   # estimate convergence  
-  R_plot = R_plot %>% group_by(var) %>% 
-    mutate(
+  R_plot = R_plot %>% dplyr::group_by(var) %>% 
+    dplyr::mutate(
            # R as a ratio
            maxR = max(R), ratio = R/max(R), 
            # percent reduction
-           perc_red = 100*(1-ratio), 
+           Rt_new = Rt*ratio, 
+           
            # containment margin
+           
            c_margin = (R0 - 1/(ratio*Rt))/(R0 - Rt),
-           c_margin = 100*ifelse(c_margin < 0, 0, c_margin),
+           c_margin = ifelse(c_margin < 0, 0, c_margin),
+           
            # percent from each group
            Symptomatic = symp*ratio*Rt,
            Asymptomatic = asymp*ratio*Rt,
            Presymptomatic = presymp*ratio*Rt, 
+           
            # set as factor for cleaning
-           Scenario2 = factor(Scenario, levels = c("No contact \ntracing", "Test symptomatic \ncontacts",
-                                                                               "Test all \ncontacts")))
-  
+           Scenario2 = factor(Scenario, levels = c("No contact \ntracing", "Testing scale-up", 
+           "Contact tracing\n(Test symptomatic)", "Contact tracing\n(Test all)")))
+
   # TOP ROW
   # process data
   R1 = R_plot %>%
-    gather(chk, value, perc_red, c_margin) %>% 
-    mutate(var2 = ifelse(chk == "perc_red", "Percentage reduction in R(t)", 
-                         "Percentage of current measures needed for \n R(t)<1 after contact tracing"),
-           var3 = factor(var2, levels = c("Percentage reduction in R(t)",
-                                          "Percentage of current measures needed for \n R(t)<1 after contact tracing")),
-           txt =  paste(Scenario2, ": \n x=", round(var), "\n y=",  round(value), sep = "")) %>% 
+    gather(chk, value, Rt_new, c_margin) %>% 
+    mutate(var2 = ifelse(chk == "Rt_new", "R(t) with contact tracing", 
+                         "Fraction of current physical distancing needed for \n R(t)<1 with contact tracing"),
+           var3 = factor(var2, levels = c("R(t) with contact tracing",
+                                          "Fraction of current physical distancing needed for \n R(t)<1 with contact tracing")),
+           txt =  paste(Scenario2, ": \n x=", round(var,2), "\n y=",  round(value,2), sep = "")) %>% 
     filter(Scenario != "No contact \ntracing") 
   
   # make plot
+  ymax = max(1, R1$value)
   a = ggplot(R1, aes(x = var, y = value)) +
     geom_line(lwd = 1, aes(group = Scenario2, col = Scenario2, text = txt)) + 
     theme_minimal(base_size = 20) +
     geom_point(data = R1 %>% filter(point=="point"), aes(x = var, y = value, group = Scenario2, text = txt), size = 2, col = "black") + 
-    facet_wrap(.~var3, ncol = 2) + t +
-    scale_color_brewer(name = "", palette = "Set1") + labs(x = xaxis, y = "", title = "") + ylim(0,100)
+    facet_wrap(.~var3, ncol = 2, scales = "free_y") + t +
+    scale_color_brewer(name = "", palette = "Set1") + labs(x = xaxis, y = "", title = "") + ylim(0, ymax)
   
   # BOTTOM LEFT
   # process data
-  R2 = R_plot %>% filter(Scenario!="No contact \ntracing") %>% 
-    mutate(temp = "Percentage of detected cases identified \nthrough contact tracing",
-           det_frac = det_frac*100,
-           txt = paste(Scenario2, ": \n x=", round(var, 2), "\n y=",  round(det_frac), sep = ""))
+  R2 = R_plot %>% filter(!Scenario%in%c("No contact \ntracing", "Testing scale-up")) %>% 
+    mutate(temp = "Fraction of confirmed cases who \nare known contacts",
+           txt = paste(Scenario2, ": \n x=", round(var, 2), "\n y=",  round(det_frac, 2), sep = ""))
   
   # make plot
   b = ggplot(R2, 
@@ -258,7 +286,7 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
                                                              text = txt), size = 2, col = "black") + 
     theme_minimal(base_size = 20) + 
     scale_color_brewer(name = "", palette = "Set1") + 
-    labs(x = xaxis, y = "", title = "") + t + facet_grid(.~temp) + ylim(0,100) + theme(legend.position='none') 
+    labs(x = xaxis, y = "", title = "") + t + facet_grid(.~temp) + ylim(0,100) + theme(legend.position='none') + ylim(0,1)
   
   # BOTTOM RIGHT
   # process data
@@ -279,11 +307,11 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
 
   # return output
   return(list(ggplotly(a, tooltip = c("text")) %>%
-                layout(margin = list(b = 50, t = 80)),
+                layout(margin = list(b = 50, t = 80)) %>% config(displayModeBar = F),
               ggplotly(b, tooltip = c("text")) %>%
-                layout(margin = list(b = 50, t = 80)),
+                layout(margin = list(b = 50, t = 80)) %>% config(displayModeBar = F),
               ggplotly(c, tooltip = c("text")) %>%
-                layout(margin = list(b = 50, t = 80))
+                layout(margin = list(b = 50, t = 80)) %>% config(displayModeBar = F)
               ))
 }
 

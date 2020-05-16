@@ -7,17 +7,18 @@
 #### SETUP #### 
 
 # source model code
-source("contact_tracing_v4.R")
+source("contact_tracing_v5.R")
 
 # libraries
 library(shinythemes)
+library(shinyjs)
 library(plotly)
 library(RColorBrewer)
 library(tidyverse)
 
 # housekeeping
   # radio button values
-  choiceNames= c("Fraction of symptomatic cases detected (community, untraced)", "Fraction of contacts successfully traced",
+  choiceNames= c("Fraction of symptomatic cases detected in community", "Fraction of contacts successfully traced",
                  "Isolation and quarantine efficacy (first generation)", "Isolation and quarantine efficacy (subsequent generations)")
   choiceValues = c("S_prob.det", "contact_trace_prob", "adh", "adh2")
 
@@ -64,7 +65,8 @@ server <- function(input, output, session) {
              "A_RR", "A_dur",
              "S_prob.det", "A_prob.det", "A_prob", "contact_trace_prob",
              "R0", "Rt", "comparator",
-             "baseline_S_prob.det", "baseline_A_prob.det", "test_uptake", "adh", "rel_trans", "xaxis")
+             "baseline_S_prob.det", "baseline_A_prob.det", 
+             "test_uptake", "adh", "adh2", "rel_trans", "xaxis")
     
     for(i in 1:length(vars)) reset(vars[i])
   })
@@ -83,10 +85,10 @@ server <- function(input, output, session) {
     })
   
   # MAKE TABLE
-  output$tbl = renderTable({ out() })
+  output$tbl = renderTable({ out()[[1]] })
   
   # MAKE PLOT TOP ROW
-  plots = reactive({ make_plots(out(), xaxis = choiceNames[which(choiceValues==input$xaxis)], R0 = input$R0, Rt = input$Rt) })
+  plots = reactive({ make_plots(out()[[1]], xaxis = choiceNames[which(choiceValues==input$xaxis)], R0 = input$R0, Rt = input$Rt) })
   output$plot <- renderPlotly({
     plots()[[1]]
   })
@@ -96,7 +98,34 @@ server <- function(input, output, session) {
     subplot(style(plots()[[2]], showlegend = FALSE),
             plots()[[3]])
   })
+  
+  # MAKE PLOT TOP ROW
+  plots_tab2 = reactive({ make_plots(out()[[2]], xaxis = choiceNames[which(choiceValues==input$xaxis)], R0 = input$R0, Rt = input$Rt) })
+  output$plot3 <- renderPlotly({
+    plots_tab2()[[1]]
+  })
+  
+  # MAKE PLOT BOTTOM ROW
+  output$plot4 <- renderPlotly({
+    subplot(style(plots_tab2()[[2]], showlegend = FALSE),
+            plots_tab2()[[3]])
+  })
+  
+  # MAKE TEXT
+  output$txt = renderText({
+    paste("<font size='4'><strong>What can contact tracing achieve?</strong> Physical distancing helped us
+          'flatten the curve'.  Contact tracing can help us reduce physical distancing without losing hard-won gains.
+          This model shows how contact tracing impacts the effective reproduction number, R(t).")
+    })
+  
+  output$txt2 = renderText({
+    paste("<font size = '4'><strong>Model approach</strong>: if the epidemic started with the basic reproductive number <strong>R<sub>0</sub>=", input$R0, 
+          "</strong>, and physical distancing measures achieved <strong>R(t)=", input$Rt, "</strong>, what happens when we add contact tracing?
+          You can adjust parameters with the sliders on the left.  For more details, see documentation tab.</font>  ", sep = "")
+  })
 
+
+  
   ### OUTPUTS ###
   # DOWNLOAD INPUTS
   output$download_Inputs <- downloadHandler(
@@ -130,7 +159,7 @@ server <- function(input, output, session) {
       paste("data_", Sys.Date(), ".csv", sep="")
     },
     content = function(file) {
-      write.csv(out() %>% select(-point), file)
+      write.csv(out[[1]]() %>% select(-point), file)
     }  
   )
 
@@ -140,6 +169,9 @@ server <- function(input, output, session) {
 ui <- fluidPage(
   # THEME
   theme=shinytheme("simplex"),
+  
+  # JS - for reset function
+  useShinyjs(),
   
   # TITLE
   titlePanel("COVID-19 Contact Tracing Model"),
@@ -151,21 +183,21 @@ ui <- fluidPage(
         
         # MAIN PARAMETERS
         tabPanel("Main", fluid=TRUE,
-                               
-                   # model
-                   h4("Community detection"),
-                   h5("Detection of individuals outside of contact tracing"),
+                          
+                   h4("Community testing"),
+                   h5("These sliders describe detection of infection in the community (among individuals who are not traced contacts)."),
                    sliderInput("S_prob.det", "Fraction of symptomatic cases detected", min=0, max=1, value=.5, step = 0.05),                               
                    sliderInput("A_prob.det", "Fraction of asymptomatic cases detected", min=0, max=1, value=.05, step = 0.05),  
 
                    h4("Contact tracing"),
                    sliderInput("contact_trace_prob", "Fraction of contacts successfully traced", min=0, max=1, value=0.8, step = 0.05), 
-                   sliderInput("adh", "Isolation and quarantine efficacy (first generation)", min=0, max=.95, value=.5, step = 0.05),
+                   h5("Isolation and quarantine efficacy is the fraction of transmission prevented in traced contacts."),
+                   sliderInput("adh", "Isolation and quarantine efficacy (first generation)", min=0, max=.95, value=.75, step = 0.05),
                    sliderInput("adh2", "Isolation and quarantine efficacy (subsequent generations)", min=0, max=.95, value=.75, step = 0.05), 
                    
                    h4("Epidemiology"),
                    sliderInput("R0", HTML("R<sub>0</sub> (prior to physical distancing)"), min=1.5, max=3.5, value=2.5, step = 0.1),  
-                   sliderInput("Rt", HTML("R(t) (after physical distancing, prior to contact tracing)"), min=.4, max=1.5, value=1, step = 0.1),    
+                   sliderInput("Rt", HTML("R(t) (with current physical distancing, without contact tracing)"), min=.4, max=1.5, value=0.9, step = 0.1),    
                    
                   radioButtons("xaxis", "X-axis variable:", choiceNames= choiceNames, 
                                choiceValues = choiceValues,
@@ -185,21 +217,28 @@ ui <- fluidPage(
         
         # ADVANCED PARAMETERS
         tabPanel("Advanced", fluid = TRUE,
-              
+               
+               h4(""),
+                         
+               h4("Strategy"),
+               HTML("<strong>'Contact tracing only'</strong> compares contact tracing vs no contact tracing at the same level of testing.  <strong>'Testing scale-up + contact tracing</strong>'
+                  compares contact tracing to no contact tracing with baseline level of testing selected below.  This is sensitive to the 
+                  to assumptions about both the baseline detection fraction and the behavioral benefits of testing (RR of transmission among detected cases)."),
+               
                # comparator             
-               radioButtons("comparator", "Analysis:", choices = c("Contact tracing only", "Testing scale-up + contact tracing"),
-                            inline = FALSE, width = NULL,
+               radioButtons("comparator", "Comparison:", choices = c("Contact tracing only", "Testing scale-up + contact tracing"),
+                            inline = FALSE, width = NULL, selected = "Contact tracing only",
                             choiceValues = NULL),
                conditionalPanel(
                  "input.comparator == 'Testing scale-up + contact tracing'",
-                 sliderInput("baseline_S_prob.det", "Baseline fraction of symptomatic cases detected", min = 0, max = 1, value = .5, step = 0.01),
+                 sliderInput("baseline_S_prob.det", "Baseline fraction of symptomatic cases detected", min = 0, max = 1, value = .2, step = 0.01),
                  sliderInput("baseline_A_prob.det", "Baseline fraction of asymptomatic cases detected", min = 0, max = 1, value = 0, step = 0.01)
                  
                ),
                
                # program
+               sliderInput("rel_trans", "Relative risk of transmission among detected cases (vs. undetected)", min=0, max=1, value=0.5, step = 0.01), 
                sliderInput("test_uptake", "Fraction of eligible contacts tested", min=0, max=1, value=0.9, step = 0.01),
-               sliderInput("rel_trans", "Relative risk of transmission among detected cases", min=0, max=1, value=0.5, step = 0.01), 
                
                # epidemiology
                h4("Pre-symptomatic"),
@@ -224,15 +263,16 @@ ui <- fluidPage(
         mainPanel(tabsetPanel(type = "tabs",
                               
               # model output                
-              tabPanel("Plots", 
-                       h4(" "),
-                       
-                       # description
-                       includeMarkdown("content/start.md"),
-                       
+              tabPanel("Model results", 
+                       h4(""),
+                       htmlOutput("txt"),
+                    
                        # output plots
                        plotlyOutput("plot", height = "450", width = "1300"),
-                       plotlyOutput("plot2", height = "450", width = "1300")
+                       plotlyOutput("plot2", height = "450", width = "1300"),
+                       htmlOutput("txt2"),
+                       
+                       includeMarkdown("content/start.md"),
                        ),
               
               # upload and view inputs
@@ -247,7 +287,6 @@ ui <- fluidPage(
               
               # documentation
               tabPanel("Documentation",
-                       h4(""),
                        includeMarkdown("content/model.md")
                        )
               ))),
