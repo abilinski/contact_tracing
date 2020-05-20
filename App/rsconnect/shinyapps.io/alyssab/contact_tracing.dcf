@@ -1,0 +1,12 @@
+name: contact_tracing
+title: contact_tracing
+username:
+account: alyssab
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2132394
+bundleId: 3154114
+url: https://alyssab.shinyapps.io/contact_tracing/
+when: 1589596142.1422
+asMultiple: FALSE
+asStatic: FALSE

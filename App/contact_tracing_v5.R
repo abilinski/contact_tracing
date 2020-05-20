@@ -19,8 +19,7 @@ get_R = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
   
   # create data frame to store output 
   a = data.frame()
-  b = data.frame()
-  
+
   # run model over each iteration of data frame
   for(i in 1:length(var)){
     
@@ -33,8 +32,7 @@ get_R = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                     comparator, baseline_S_prob.det, baseline_A_prob.det, 
                     test_uptake, adh, adh2, rel_trans)
     
-    a = bind_rows(a, calc_R(z[[1]], z[[2]], z[[3]], z[[4]], z[[5]],z[[6]],
-                            comparator = "Testing scale-up + contact tracing") %>% 
+    a = bind_rows(a, calc_R(z[[1]], z[[2]], z[[3]], z[[4]], z[[5]],z[[6]]) %>% 
                     mutate(
                       # store variable values
                       var = var[i], 
@@ -42,23 +40,9 @@ get_R = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
                       # note if these were selected inputs
                       point = ifelse(i == 1, "point", "omit")))
     
-    # make parameter vectors
-    z2 = make_params(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
-                    A_prob.det, A_prob, contact_trace_prob,
-                    comparator = "Contact tracing only", baseline_S_prob.det, baseline_A_prob.det, 
-                    test_uptake, adh, adh2, rel_trans)
-    
-    # run analyses
-    b = bind_rows(b, calc_R(z2[[1]], z2[[2]], z2[[3]], z2[[4]], z2[[5]],z2[[6]]) %>% 
-                    mutate(
-                      # store variable values
-                      var = var[i], 
-                      
-                      # note if these were selected inputs
-                      point = ifelse(i == 1, "point", "omit")))
   }
   
-  return(list(a,b))
+  return(a)
   
 }
 
@@ -121,16 +105,12 @@ make_params = function(P_RR, P_dur, S_RR, S_dur, A_RR, A_dur, S_prob.det,
 # 2) Test symptomatics
 # 3) Test all
 calc_R = function(params_cf, params, params_ctrace_1, params_ctrace_2plus,
-                  params_test_ctrace_1, params_test_ctrace_2_plus, comparator = "Contact tracing only") {
+                  params_test_ctrace_1, params_test_ctrace_2_plus) {
   
   # run different methods
   out = bind_rows(dom_eigen(params_cf, params_cf, params_cf) %>% mutate(Scenario = "No contact \ntracing"),
                   dom_eigen(params, params_ctrace_1, params_ctrace_2plus) %>% mutate(Scenario = "Contact tracing\n(Test symptomatic)"),
                   dom_eigen(params, params_test_ctrace_1, params_test_ctrace_2_plus) %>% mutate(Scenario = "Contact tracing\n(Test all)"))
-  
-  #if(comparator!="Contact tracing only"){
-  #  out = out %>% bind_rows(dom_eigen(params, params, params) %>% mutate(Scenario = "Testing scale-up"))
-  #}
   return(out) 
 }
 
@@ -233,7 +213,7 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
   R_plot = R_plot %>% dplyr::group_by(var) %>% 
     dplyr::mutate(
            # R as a ratio
-           maxR = max(R), ratio = R/max(R), 
+           maxR = R[1], ratio = R/maxR, 
            # percent reduction
            Rt_new = Rt*ratio, 
            
@@ -304,7 +284,7 @@ make_plots = function(R_plot, xaxis = "test", R0 = 2, Rt = 1) {
     theme_minimal(base_size = 20) + 
     scale_fill_brewer(name = "", palette = "Set1") + 
     labs(x = xaxis, y = "", title = "") + t + facet_grid(.~temp)
-
+  
   # return output
   return(list(ggplotly(a, tooltip = c("text")) %>%
                 layout(margin = list(b = 50, t = 80)) %>% config(displayModeBar = F),

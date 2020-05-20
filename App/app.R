@@ -7,6 +7,7 @@
 #### SETUP #### 
 
 # source model code
+setwd("~/Dropbox/Contact tracing/Public app")
 source("contact_tracing_v5.R")
 
 # libraries
@@ -61,7 +62,7 @@ server <- function(input, output, session) {
 ### MODEL ###
   # RESTORE BUTTON
   observeEvent(input$restore_all, {
-    vars = c("P_RR", "P_dur", "S_RR", "S_dur",
+    vars = c("P_RR", "P_dur", "S_dur",
              "A_RR", "A_dur",
              "S_prob.det", "A_prob.det", "A_prob", "contact_trace_prob",
              "R0", "Rt", "comparator",
@@ -74,7 +75,7 @@ server <- function(input, output, session) {
   # RUN CONTACT TRACING MODEL
   out <- reactive({
     
-    get_R(P_RR = input$P_RR, P_dur = input$P_dur, S_RR = input$S_RR, S_dur = input$S_dur,
+    get_R(P_RR = input$P_RR, P_dur = input$P_dur, S_RR = 1, S_dur = input$S_dur,
           A_RR = input$A_RR, A_dur = input$A_dur, S_prob.det = input$S_prob.det,
           A_prob.det = input$A_prob.det, A_prob = input$A_prob, contact_trace_prob = input$contact_trace_prob,
           comparator = input$comparator,
@@ -85,10 +86,10 @@ server <- function(input, output, session) {
     })
   
   # MAKE TABLE
-  output$tbl = renderTable({ out()[[1]] })
+  output$tbl = renderTable({ out() })
   
   # MAKE PLOT TOP ROW
-  plots = reactive({ make_plots(out()[[1]], xaxis = choiceNames[which(choiceValues==input$xaxis)], R0 = input$R0, Rt = input$Rt) })
+  plots = reactive({ make_plots(out(), xaxis = choiceNames[which(choiceValues==input$xaxis)], R0 = input$R0, Rt = input$Rt) })
   output$plot <- renderPlotly({
     plots()[[1]]
   })
@@ -97,18 +98,6 @@ server <- function(input, output, session) {
   output$plot2 <- renderPlotly({
     subplot(style(plots()[[2]], showlegend = FALSE),
             plots()[[3]])
-  })
-  
-  # MAKE PLOT TOP ROW
-  plots_tab2 = reactive({ make_plots(out()[[2]], xaxis = choiceNames[which(choiceValues==input$xaxis)], R0 = input$R0, Rt = input$Rt) })
-  output$plot3 <- renderPlotly({
-    plots_tab2()[[1]]
-  })
-  
-  # MAKE PLOT BOTTOM ROW
-  output$plot4 <- renderPlotly({
-    subplot(style(plots_tab2()[[2]], showlegend = FALSE),
-            plots_tab2()[[3]])
   })
   
   # MAKE TEXT
@@ -134,7 +123,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       # Define inputs to save
-      inputs_to_save <- c("P_RR", "P_dur", "S_RR", "S_dur",
+      inputs_to_save <- c("P_RR", "P_dur", "S_dur",
                                   "A_RR", "A_dur",
                                   "S_prob.det", "A_prob.det", "A_prob", "contact_trace_prob", 
                                    "R0", "Rt", "comparator",
@@ -159,7 +148,7 @@ server <- function(input, output, session) {
       paste("data_", Sys.Date(), ".csv", sep="")
     },
     content = function(file) {
-      write.csv(out[[1]]() %>% select(-point), file)
+      write.csv(out() %>% select(-point), file)
     }  
   )
 
@@ -218,15 +207,33 @@ ui <- fluidPage(
         # ADVANCED PARAMETERS
         tabPanel("Advanced", fluid = TRUE,
                
-               h4(""),
-                         
+               h4("Detection"),
+
+               # program
+               sliderInput("rel_trans", "Relative risk of transmission among detected cases (vs. undetected)", min=0, max=1, value=0.5, step = 0.01), 
+               sliderInput("test_uptake", "Fraction of eligible contacts tested", min=0, max=1, value=0.9, step = 0.01),
+               
+               # epidemiology
+               h4("Pre-symptomatic"),
+               sliderInput("P_RR", "Relative risk of transmission (vs. symptomatic)", min=0, max=1.5, value=1, step = 0.01),
+               sliderInput("P_dur", "Duration of pre-symptomatic transmission", min=0, max=3, value=1.5, step = 0.01),  
+               
+               h4("Symptomatic"),
+               sliderInput("S_dur", "Duration of symptomatic transmission", min=0, max=10, value=4, step = 0.01),   
+                    
+               h4("Asymptomatic"),
+               sliderInput("A_RR", "Relative risk of transmission (vs. symptomatic)", min=0, max=1.5, value=.7, step = 0.01),                               
+               sliderInput("A_dur", "Duration of asymptomatic transmission", min=0, max=10, value=5.5, step = 0.01),   
+
+               sliderInput("A_prob", "Fraction of cases that are asymptomatic", min=0, max=1, value=0.4, step = 0.01),
+               
                h4("Strategy"),
                HTML("<strong>'Contact tracing only'</strong> compares contact tracing vs no contact tracing at the same level of testing.  <strong>'Testing scale-up + contact tracing</strong>'
-                  compares contact tracing to no contact tracing with baseline level of testing selected below.  This is sensitive to the 
+                  compares contact tracing to no contact tracing with a user-selected baseline level of testing.  This is sensitive to the 
                   to assumptions about both the baseline detection fraction and the behavioral benefits of testing (RR of transmission among detected cases)."),
                
                # comparator             
-               radioButtons("comparator", "Comparison:", choices = c("Contact tracing only", "Testing scale-up + contact tracing"),
+               radioButtons("comparator", "", choices = c("Contact tracing only", "Testing scale-up + contact tracing"),
                             inline = FALSE, width = NULL, selected = "Contact tracing only",
                             choiceValues = NULL),
                conditionalPanel(
@@ -235,25 +242,6 @@ ui <- fluidPage(
                  sliderInput("baseline_A_prob.det", "Baseline fraction of asymptomatic cases detected", min = 0, max = 1, value = 0, step = 0.01)
                  
                ),
-               
-               # program
-               sliderInput("rel_trans", "Relative risk of transmission among detected cases (vs. undetected)", min=0, max=1, value=0.5, step = 0.01), 
-               sliderInput("test_uptake", "Fraction of eligible contacts tested", min=0, max=1, value=0.9, step = 0.01),
-               
-               # epidemiology
-               h4("Pre-symptomatic"),
-               sliderInput("P_RR", "Relative risk of transmission", min=0, max=1, value=1, step = 0.01),
-               sliderInput("P_dur", "Duration of pre-symptomatic transmission", min=0, max=3, value=1.5, step = 0.01),  
-               
-               h4("Symptomatic"),
-               sliderInput("S_RR", "Relative risk of transmission", min=0, max=1, value=1, step = 0.01),                               
-               sliderInput("S_dur", "Duration of symptomatic transmission", min=0, max=10, value=4, step = 0.01),   
-                    
-               h4("Asymptomatic"),
-               sliderInput("A_RR", "Relative risk of transmission", min=0, max=1, value=.7, step = 0.01),                               
-               sliderInput("A_dur", "Duration of asymptomatic transmission", min=0, max=10, value=5.5, step = 0.01),   
-
-               sliderInput("A_prob", "Fraction of cases that are asymptomatic", min=0, max=1, value=0.4, step = 0.01)
                
                )
       

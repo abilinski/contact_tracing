@@ -1,0 +1,12 @@
+name: spark_control2
+title: spark_control2
+username:
+account: alyssab
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2306882
+bundleId: 3153971
+url: https://alyssab.shinyapps.io/spark_control2/
+when: 1589591266.00765
+asMultiple: FALSE
+asStatic: FALSE
